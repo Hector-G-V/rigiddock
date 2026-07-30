@@ -41,19 +41,107 @@ def parseLocal(file_path):
     # get all data in the entity_poly_seq category
 
 
-    # Remove the waters
+    # ----------------------------------------------------------------------
+    # Get column indices
+    # ----------------------------------------------------------------------
 
-    label_comp_id_index = atom_site.getAttributeIndex('label_comp_id')
-    # Get index of _atom_site.label_comp_id column. 3-letter AA code, HOH, etc
-    
-    filtered_rows = [row for row in atom_site.data if row[label_comp_id_index] != 'HOH']
-    # Filter out rows where _atom_site.label_comp_id is 'HOH'
-    
+    label_comp_id_idx = atom_site.getAttributeIndex("label_comp_id")
+    label_alt_id_idx = atom_site.getAttributeIndex("label_alt_id")
+    occupancy_idx = atom_site.getAttributeIndex("occupancy")
+
+    label_asym_id_idx = atom_site.getAttributeIndex("label_asym_id")
+    label_seq_id_idx = atom_site.getAttributeIndex("label_seq_id")
+    label_atom_id_idx = atom_site.getAttributeIndex("label_atom_id")
+
+    # Optional but recommended for unusual residue numbering
+    ins_code_idx = atom_site.getAttributeIndex("pdbx_PDB_ins_code")
+
+    # ----------------------------------------------------------------------
+    # Pass 1: remove waters
+    # ----------------------------------------------------------------------
+
+    rows = [
+        row for row in atom_site.data
+        if row[label_comp_id_idx] != "HOH"
+    ] # Filter out rows where _atom_site.label_comp_id is 'HOH'
+
+    # ----------------------------------------------------------------------
+    # Pass 2: Determine the highest-occupancy alternate conformer
+    # ----------------------------------------------------------------------
+
+    """
+    Algorithm for Pass 2 & 3:
+        For atoms without an alternate location 
+        (label_alt_id is . or ? or empty), keep them unchanged.
+
+        For atoms with alternate locations (A, B, etc.), 
+        compare the rows representing the same atom.
+        
+        Keep the row with the highest occupancy.
+
+        If occupancies are tied, keep the first one 
+        encountered (Python's > comparison naturally does this).
+
+    The algo creates gaps in _atom_site.id. This change is valid in mmcif format. 
+    Recall that _atom_site.id is just a unique identifier, not a sorted sequence.
+    """
+    best_alt = {}
+
+    for row in rows:
+
+        alt_id = row[label_alt_id_idx]
+
+        # No alternate conformation
+        if alt_id in (".", "?", "", None):
+            continue
+
+        key = (
+            row[label_asym_id_idx],
+            row[label_seq_id_idx],
+            row[ins_code_idx],
+            row[label_comp_id_idx],
+            row[label_atom_id_idx],
+        )
+
+        occupancy = float(row[occupancy_idx])
+
+        # Keep the first row encountered if occupancies are equal
+        if key not in best_alt or occupancy > best_alt[key][0]:
+            best_alt[key] = (occupancy, row)
+
+    # ----------------------------------------------------------------------
+    # Pass 3: Filter the rows while preserving their original order
+    # ----------------------------------------------------------------------
+
+    filtered_rows = []
+
+    for row in rows:
+
+        alt_id = row[label_alt_id_idx]
+
+        # No alternate conformation
+        if alt_id in (".", "?", "", None):
+            filtered_rows.append(row)
+            continue
+
+        key = (
+            row[label_asym_id_idx],
+            row[label_seq_id_idx],
+            row[ins_code_idx],
+            row[label_comp_id_idx],
+            row[label_atom_id_idx],
+        )
+
+        if row is best_alt[key][1]:
+            filtered_rows.append(row)
+
+    # Replace the atom_site table
     atom_site.setRowList(filtered_rows)
-    # Overwrite the atom_site data with the filtered rows
-    
 
+
+    # ----------------------------------------------------------------------
     # Isolate the Cartesian coordinates
+    # ----------------------------------------------------------------------
 
     x = atom_site.getAttributeValueList('Cartn_x')
     y = atom_site.getAttributeValueList('Cartn_y')
@@ -71,5 +159,5 @@ def parseLocal(file_path):
     # Organize the data into points (x,y,z) for output
 
 
-    return data
-    # Change to this very soon in the future. For now, keep the same
+    #return data
+    return atom_site

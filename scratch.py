@@ -354,3 +354,23 @@ Output values:
 # ###
 # Scratch
 # ###
+
+import os
+from mmcif.io.IoAdapterCore import IoAdapterCore
+from p.pdb_parser import parseLocal
+
+DIR = os.path.join('..','..','..','..','OneDrive','Non Sys','Projects','PyMol')
+# Location of the PDB file on the local console. 
+# Hard coded, but it's ok because path is also needed in AWS code.
+
+filepath = os.path.join(DIR, '2ar7.cif')
+
+
+pdb_out = parseLocal(filepath)
+print()
+"""for i in pdb_out:
+    print(i)"""
+y=375
+for i in range(y,y+30):
+    print(pdb_out[i])
+print()
