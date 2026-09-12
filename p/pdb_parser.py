@@ -160,4 +160,4 @@ def parseLocal(file_path):
 
 
     #return data
-    return atom_site
+    return data
