@@ -20,10 +20,14 @@ def parseURL():
     # the package mmcif, under demo.
 
 
-def parseLocal(file_path):
+def preprocessing(file_path):
+
+    # Execute the preprocessing options given by the user. At the moment:
+    #   Remove water
+    #   Remove alternate locations
     
-    # filename: the file from which to extract data
-    # Returns the coordinates of atoms in the protein, extracted from the PDB file
+    # file_path: the file from which to extract data
+    # Returns the data container
     # Work on building the comments later
 
 
@@ -138,6 +142,15 @@ def parseLocal(file_path):
     # Replace the atom_site table
     atom_site.setRowList(filtered_rows)
 
+    return atom_site
+
+
+def atom_site_xyz(atom_site):
+
+    # Isolate the Cartesian coordinates from the data container
+    # filename: the file from which to extract data
+    # Returns the coordinates of atoms in the protein, extracted from the PDB file
+    # Work on building the comments later
 
     # ----------------------------------------------------------------------
     # Isolate the Cartesian coordinates
@@ -161,3 +174,19 @@ def parseLocal(file_path):
 
     #return data
     return data
+
+
+def parseLocal(file_path):
+    
+    # Performs the preprocessing and xyz coordinate retrieval from the pdb file
+    # filename: the file from which to extract data
+    # Returns the coordinates of atoms in the protein, extracted from the PDB file
+    # Work on building the comments later
+
+    # Remove waters and alternate sites (for now)
+    preprocess = preprocessing(file_path)
+
+    # Extract xyz coordinates
+    coordinates = atom_site_xyz(preprocess)
+
+    return coordinates
