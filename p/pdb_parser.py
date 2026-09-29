@@ -7,9 +7,13 @@ This is creating inter-function dependency.
 
 import os
 import constants as c
-
 import urllib.request  #for file download
+
+import numpy as np
+
 from mmcif.io.IoAdapterCore import IoAdapterCore
+from mmcif.api.PdbxContainers import DataContainer
+from mmcif.api.DataCategory import DataCategory
 
 
 def parseURL():
@@ -190,3 +194,323 @@ def parseLocal(file_path):
     coordinates = atom_site_xyz(preprocess)
 
     return coordinates
+
+
+def write_docked_file(
+    filepath_A,
+    filepath_B,
+    transformed_coordinates_B,
+    output_file,
+):
+    """
+    Create a new mmCIF containing proteins A and B.
+
+    Protein A:
+        - coordinates unchanged
+        - chain ID = A
+        - entity ID = 1
+
+    Protein B:
+        - coordinates replaced by transformed_coordinates_B
+        - chain ID = B
+        - entity ID = 2
+
+    Atom IDs are renumbered sequentially in the output.
+
+    A small common _atom_site schema is used so that A and B
+    do not need to have identical mmCIF schemas.
+
+    Parameters
+    ----------
+    filepath_A : str
+        Filepath to protein A.
+
+    filepath_B : str
+        Filepath to protein B.
+
+    transformed_coordinates_B : numpy.ndarray
+        Array of shape (N, 3) containing the transformed
+        coordinates for protein B.
+
+    output_file : str
+        Path of the output mmCIF file.
+    """
+
+    # ------------------------------------------------------------------
+    # Get preprocessed atom_site categories
+    # ------------------------------------------------------------------
+    
+    # Preprocessing: remove HOH, alternate sites, etc.
+    # Returns preprocessed mmCIF container for proteins
+    atom_site_A = preprocessing(filepath_A)
+    atom_site_B = preprocessing(filepath_B)
+
+    # ------------------------------------------------------------------
+    # Verify coordinate count
+    # ------------------------------------------------------------------
+
+    transformed_coordinates_B = np.asarray(
+        transformed_coordinates_B
+    )
+
+    if transformed_coordinates_B.shape != (
+        atom_site_B.getRowCount(),
+        3,
+    ):
+        raise ValueError(
+            "transformed_coordinates_B must have shape "
+            f"({atom_site_B.getRowCount()}, 3)"
+        )
+
+    # ------------------------------------------------------------------
+    # Source IDs for provenance
+    # ------------------------------------------------------------------
+
+    source_A = os.path.basename(filepath_A)
+    source_B = os.path.basename(filepath_B)
+
+    # ------------------------------------------------------------------
+    # Create output DataContainer
+    # ------------------------------------------------------------------
+
+    output_container = DataContainer("rdock_docked")
+
+    # ------------------------------------------------------------------
+    # Create _struct category
+    # ------------------------------------------------------------------
+
+    struct = DataCategory(
+        "struct",
+        [
+            "entry_id",
+            "title",
+        ],
+    )
+
+    struct.append(
+        [
+            "rdock_docked",
+            (
+                "Protein-protein rigid-body docking model generated "
+                f"by RDock from {source_A} and {source_B}"
+            ),
+        ]
+    )
+
+    output_container.append(struct)
+
+    # ------------------------------------------------------------------
+    # Create _entity category
+    # ------------------------------------------------------------------
+
+    entity = DataCategory(
+        "entity",
+        [
+            "id",
+            "type",
+            "pdbx_description",
+        ],
+    )
+
+    entity.append(
+        [
+            "1",
+            "polymer",
+            "Protein A",
+        ]
+    )
+
+    entity.append(
+        [
+            "2",
+            "polymer",
+            "Protein B",
+        ]
+    )
+
+    output_container.append(entity)
+
+    # ------------------------------------------------------------------
+    # Create _struct_asym category
+    # ------------------------------------------------------------------
+
+    struct_asym = DataCategory(
+        "struct_asym",
+        [
+            "id",
+            "entity_id",
+        ],
+    )
+
+    struct_asym.append(
+        [
+            "A",
+            "1",
+        ]
+    )
+
+    struct_asym.append(
+        [
+            "B",
+            "2",
+        ]
+    )
+
+    output_container.append(struct_asym)
+
+    # ------------------------------------------------------------------
+    # Define a common, minimal _atom_site schema
+    # ------------------------------------------------------------------
+
+    atom_site_attributes = [
+        "group_PDB",
+        "id",
+        "type_symbol",
+        "label_atom_id",
+        "label_comp_id",
+        "label_asym_id",
+        "label_entity_id",
+        "label_seq_id",
+        "pdbx_PDB_ins_code",
+        "label_alt_id",
+        "Cartn_x",
+        "Cartn_y",
+        "Cartn_z",
+        "occupancy",
+        "B_iso_or_equiv",
+    ]
+
+    output_atom_site = DataCategory(
+        "atom_site",
+        atom_site_attributes,
+    )
+
+    # ------------------------------------------------------------------
+    # Helper for retrieving an attribute
+    #
+    # Some mmCIF files may not contain every optional attribute.
+    # Return "." when an attribute is absent.
+    # ------------------------------------------------------------------
+
+    def get_value(atom_site, row, attribute):
+        if atom_site.hasAttribute(attribute):
+            return row[atom_site.getAttributeIndex(attribute)]
+
+        return "."
+
+    # ------------------------------------------------------------------
+    # Define a common, minimal _atom_site schema
+    # ------------------------------------------------------------------
+
+    atom_site_attributes = [
+        "group_PDB",
+        "id",
+        "type_symbol",
+        "label_atom_id",
+        "label_comp_id",
+        "label_asym_id",
+        "label_entity_id",
+        "label_seq_id",
+        "label_alt_id",
+        "pdbx_PDB_ins_code",
+        "Cartn_x",
+        "Cartn_y",
+        "Cartn_z",
+        "occupancy",
+        "B_iso_or_equiv",
+    ]
+
+    output_atom_site = DataCategory(
+        "atom_site",
+        atom_site_attributes,
+    )
+
+    # ------------------------------------------------------------------
+    # Helper for retrieving an attribute
+    #
+    # Some mmCIF files may not contain every optional attribute.
+    # Return "." when an attribute is absent.
+    # ------------------------------------------------------------------
+
+    def get_value(atom_site, row, attribute):
+        if atom_site.hasAttribute(attribute):
+            return row[atom_site.getAttributeIndex(attribute)]
+
+        return "."
+
+    # ------------------------------------------------------------------
+    # Add Protein A
+    # ------------------------------------------------------------------
+
+    output_atom_id = 1
+
+    for row in atom_site_A.data:
+
+        output_row = [
+            get_value(atom_site_A, row, "group_PDB"),
+            str(output_atom_id),
+            get_value(atom_site_A, row, "type_symbol"),
+            get_value(atom_site_A, row, "label_atom_id"),
+            get_value(atom_site_A, row, "label_comp_id"),
+            "A",
+            "1",
+            get_value(atom_site_A, row, "label_seq_id"),
+            get_value(atom_site_A, row, "label_alt_id"),
+            get_value(atom_site_A, row, "pdbx_PDB_ins_code"),
+            get_value(atom_site_A, row, "Cartn_x"),
+            get_value(atom_site_A, row, "Cartn_y"),
+            get_value(atom_site_A, row, "Cartn_z"),
+            get_value(atom_site_A, row, "occupancy"),
+            get_value(atom_site_A, row, "B_iso_or_equiv"),
+        ]
+
+        output_atom_site.append(output_row)
+
+        output_atom_id += 1
+
+    # ------------------------------------------------------------------
+    # Add Protein B
+    # ------------------------------------------------------------------
+
+    for row, (x, y, z) in zip(
+        atom_site_B.data,
+        transformed_coordinates_B,
+    ):
+
+        output_row = [
+            get_value(atom_site_B, row, "group_PDB"),
+            str(output_atom_id),
+            get_value(atom_site_B, row, "type_symbol"),
+            get_value(atom_site_B, row, "label_atom_id"),
+            get_value(atom_site_B, row, "label_comp_id"),
+            "B",
+            "2",
+            get_value(atom_site_B, row, "label_seq_id"),
+            get_value(atom_site_B, row, "label_alt_id"),
+            get_value(atom_site_B, row, "pdbx_PDB_ins_code"),
+            f"{x:.3f}",
+            f"{y:.3f}",
+            f"{z:.3f}",
+            get_value(atom_site_B, row, "occupancy"),
+            get_value(atom_site_B, row, "B_iso_or_equiv"),
+        ]
+
+        output_atom_site.append(output_row)
+
+        output_atom_id += 1
+
+    # ------------------------------------------------------------------
+    # Add atom_site to output container
+    # ------------------------------------------------------------------
+
+    output_container.append(output_atom_site)
+
+    # ------------------------------------------------------------------
+    # Write output mmCIF
+    # ------------------------------------------------------------------
+
+    io = IoAdapterCore()
+    io.writeFile(
+        output_file,
+        [output_container],
+    )

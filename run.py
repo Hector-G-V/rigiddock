@@ -1,6 +1,6 @@
 import constants as c
 import utils, p.p_bar, fft.fft, fft.n, rotation.utils
-from p.pdb_parser import parseLocal
+from p.pdb_parser import parseLocal, write_docked_file
 import os
 from math import pi as pi
 import numpy as np
@@ -167,4 +167,23 @@ matrix = [
 ] # PyMol rotation/translation matrix
 matrix = [float(i) for i in matrix] # Must be simple list for PyMol
 
-# Will need these to print the PyMol script later.
+# Will need 'matrix', s to print the PyMol script later.
+
+# write the docked-proteins file
+# Need to prepare:
+#    filepath_A,
+#    filepath_B,
+#    transformed_coordinates_B,
+#    output_file,
+
+# filepath_A, filepath_B: initialized at the beginning of run.py
+
+# transformed_coordinates_B
+#transformed_B = b_c_pdb @ R.T + s # GIVING AN OVERFLOW ERROR.
+transformed_B = np.dot(b_c_pdb, R.T) + s # Equivalent to above; produces no errors.
+
+# output_file
+#output_file = os.path.join('..','..','..','..','Downloads','merged_output.cif') # Studio
+output_file = os.path.join('..','..','..','Downloads','merged_output.cif') # Air
+
+write_docked_file(filepath_A, filepath_B, b_c_pdb, output_file)
