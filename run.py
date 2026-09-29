@@ -179,7 +179,7 @@ matrix = [float(i) for i in matrix] # Must be simple list for PyMol
 # filepath_A, filepath_B: initialized at the beginning of run.py
 
 # transformed_coordinates_B
-#transformed_B = b_c_pdb @ R.T + s # GIVING AN OVERFLOW ERROR.
+#transformed_B = b_c_pdb @ R.T + s # Gives overflow error when N is large. Might be version, OS or memory-dependent.
 transformed_B = np.dot(b_c_pdb, R.T) + s # Equivalent to above; produces no errors.
 
 # output_file
