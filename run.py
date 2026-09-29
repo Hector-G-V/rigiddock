@@ -186,4 +186,4 @@ transformed_B = np.dot(b_c_pdb, R.T) + s # Equivalent to above; produces no erro
 #output_file = os.path.join('..','..','..','..','Downloads','merged_output.cif') # Studio
 output_file = os.path.join('..','..','..','Downloads','merged_output.cif') # Air
 
-write_docked_file(filepath_A, filepath_B, b_c_pdb, output_file)
+write_docked_file(filepath_A, filepath_B, transformed_B, output_file)
