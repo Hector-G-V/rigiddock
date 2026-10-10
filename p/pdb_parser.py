@@ -399,46 +399,6 @@ def write_docked_file(
         return "."
 
     # ------------------------------------------------------------------
-    # Define a common, minimal _atom_site schema
-    # ------------------------------------------------------------------
-
-    atom_site_attributes = [
-        "group_PDB",
-        "id",
-        "type_symbol",
-        "label_atom_id",
-        "label_comp_id",
-        "label_asym_id",
-        "label_entity_id",
-        "label_seq_id",
-        "label_alt_id",
-        "pdbx_PDB_ins_code",
-        "Cartn_x",
-        "Cartn_y",
-        "Cartn_z",
-        "occupancy",
-        "B_iso_or_equiv",
-    ]
-
-    output_atom_site = DataCategory(
-        "atom_site",
-        atom_site_attributes,
-    )
-
-    # ------------------------------------------------------------------
-    # Helper for retrieving an attribute
-    #
-    # Some mmCIF files may not contain every optional attribute.
-    # Return "." when an attribute is absent.
-    # ------------------------------------------------------------------
-
-    def get_value(atom_site, row, attribute):
-        if atom_site.hasAttribute(attribute):
-            return row[atom_site.getAttributeIndex(attribute)]
-
-        return "."
-
-    # ------------------------------------------------------------------
     # Add Protein A
     # ------------------------------------------------------------------
 
