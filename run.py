@@ -59,16 +59,27 @@ def run_stage(constants, indices):
 
 
 # ##
-# Get a_c, b_c
+# Input to the rigiddock package
 # ##
 
-DIR = os.path.join('..','..','..','PyMol','2hhb')
+#INPUT_DIR = os.path.join('..','..','..','..','OneDrive','Non Sys','Projects','PyMol') # Studio
+INPUT_DIR = os.path.join('..','..','..','Documents','OneDrive','Non Sys','Projects','PyMol') # Air
 # Location of the PDB file on the local console. 
 # Hard coded, but it's ok because path is also needed in AWS code.
 
-filepath_A = os.path.join(DIR, 'A Chain - 2hhb.cif')
-filepath_B = os.path.join(DIR, 'B Chain - 2hhb.cif')
-# complete file path
+filepath_A = os.path.join(INPUT_DIR,'2mhb', '2mhb.cif')
+filepath_B = os.path.join(INPUT_DIR,'2mhb', '2mhb.cif')
+
+#OUTPUT_DIR = os.path.join('..','..','..','..','Downloads') # Studio
+OUTPUT_DIR = os.path.join('..','..','..','Downloads') # Air
+
+fpath_json_output = os.path.join(OUTPUT_DIR, 'json_output.json')
+fpath_docked_output = os.path.join(OUTPUT_DIR, 'merged_output.cif')
+
+
+# ##
+# Get a_c, b_c
+# ##
 
 a_c, b_c_pdb = np.array(parseLocal(filepath_A)), np.array(parseLocal(filepath_B))
 # Cartesian coordinates of atoms in proteins a, b, extracted from local PDB files
@@ -183,7 +194,6 @@ matrix = [float(i) for i in matrix] # Must be simple list for PyMol
 transformed_B = np.dot(b_c_pdb, R.T) + s # Equivalent to above; produces no errors.
 
 # output_file
-#output_file = os.path.join('..','..','..','..','Downloads','merged_output.cif') # Studio
-output_file = os.path.join('..','..','..','Downloads','merged_output.cif') # Air
+output_file = fpath_docked_output
 
 write_docked_file(filepath_A, filepath_B, transformed_B, output_file)

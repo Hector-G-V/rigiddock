@@ -6,6 +6,7 @@ This is creating inter-function dependency.
 """
 
 import os
+import string
 import constants as c
 import urllib.request  #for file download
 
@@ -205,20 +206,24 @@ def write_docked_file(
     """
     Create a new mmCIF containing proteins A and B.
 
+    Each input may contain multiple chains.
+
     Protein A:
-        - coordinates unchanged
-        - chain ID = A
-        - entity ID = 1
+        - Coordinates unchanged.
+        - All chains retained.
+        - Assigned unique output chain IDs.
+        - Assigned unique entity IDs.
 
     Protein B:
-        - coordinates replaced by transformed_coordinates_B
-        - chain ID = B
-        - entity ID = 2
+        - Coordinates replaced by transformed_coordinates_B.
+        - All chains retained.
+        - Assigned unique output chain IDs that do not overlap A's.
+        - Assigned unique entity IDs.
 
-    Atom IDs are renumbered sequentially in the output.
+    Atom IDs are renumbered sequentially.
 
-    A small common _atom_site schema is used so that A and B
-    do not need to have identical mmCIF schemas.
+    The output uses a common _atom_site schema so that 
+    A and B do not need to have identical mmCIF schemas.
 
     Parameters
     ----------
@@ -230,23 +235,24 @@ def write_docked_file(
 
     transformed_coordinates_B : numpy.ndarray
         Array of shape (N, 3) containing the transformed
-        coordinates for protein B.
+        coordinates for all retained atoms in B, in the same
+        order as the rows returned by preprocessing().
 
     output_file : str
         Path of the output mmCIF file.
     """
 
     # ------------------------------------------------------------------
-    # Get preprocessed atom_site categories
+    # 1. Preprocess the input structures.
     # ------------------------------------------------------------------
-    
+
     # Preprocessing: remove HOH, alternate sites, etc.
     # Returns preprocessed mmCIF container for proteins
     atom_site_A = preprocessing(filepath_A)
     atom_site_B = preprocessing(filepath_B)
 
     # ------------------------------------------------------------------
-    # Verify coordinate count
+    # 2. Validate transformed coordinates
     # ------------------------------------------------------------------
 
     transformed_coordinates_B = np.asarray(
@@ -262,104 +268,187 @@ def write_docked_file(
             f"({atom_site_B.getRowCount()}, 3)"
         )
 
+    if not np.isfinite(transformed_coordinates_B).all():
+        raise ValueError(
+            "transformed_coordinates_B contains non-finite coordinates."
+        )
+
     # ------------------------------------------------------------------
-    # Source IDs for provenance
+    # 3. Validate required input columns
+    # ------------------------------------------------------------------
+
+    required_attributes = [
+        "type_symbol",
+        "label_atom_id",
+        "label_comp_id",
+        "label_asym_id",
+        "Cartn_x",
+        "Cartn_y",
+        "Cartn_z",
+    ]
+
+    for name, atom_site in [
+        ("A", atom_site_A),
+        ("B", atom_site_B),
+    ]:
+        missing = [
+            attr for attr in required_attributes
+            if not atom_site.hasAttribute(attr)
+        ]
+
+        if missing:
+            raise ValueError(
+                f"Input {name} is missing required _atom_site "
+                f"attributes: {missing}"
+            )
+
+    # ------------------------------------------------------------------
+    # 4. Collect original chain IDs in their order of appearance
+    # ------------------------------------------------------------------
+
+    def get_chain_ids(atom_site):
+        chain_idx = atom_site.getAttributeIndex("label_asym_id")
+
+        # dict preserves insertion order in modern Python.
+        return list(dict.fromkeys(
+            row[chain_idx] for row in atom_site.data
+        ))
+
+    chains_A = get_chain_ids(atom_site_A)
+    chains_B = get_chain_ids(atom_site_B)
+
+    if not chains_A or not chains_B:
+        raise ValueError(
+            "Both docking partners must contain at least one atom "
+            "and one chain."
+        )
+
+    # ------------------------------------------------------------------
+    # 5. Assign unique output chain IDs
+    #
+    # Use A-Z, a-z, 0-9, then extend to multi-character IDs if needed.
+    # Chain IDs are identifiers; their names do not affect coordinates.
+    # ------------------------------------------------------------------
+
+    def generate_chain_ids(n):
+        alphabet = string.ascii_uppercase + string.ascii_lowercase + string.digits
+        base = len(alphabet)
+
+        ids = []
+
+        for i in range(n):
+            if i < base:
+                ids.append(alphabet[i])
+            else:
+                # Extend to multi-character IDs.
+                value = i
+                chars = []
+
+                while value >= base:
+                    chars.append(alphabet[value % base])
+                    value = value // base - 1
+
+                chars.append(alphabet[value])
+                ids.append("".join(reversed(chars)))
+
+        return ids
+
+    all_chains = chains_A + chains_B
+    output_chain_ids = generate_chain_ids(len(all_chains))
+
+    chain_map_A = dict(zip(chains_A, output_chain_ids[:len(chains_A)]))
+    chain_map_B = dict(zip(chains_B, output_chain_ids[len(chains_A):]))
+
+    # Assign one entity ID per output chain.
+    # This deliberately keeps the MVP mapping simple.
+    entity_map_A = {
+        chain: str(i + 1)
+        for i, chain in enumerate(chains_A)
+    }
+
+    entity_map_B = {
+        chain: str(len(chains_A) + i + 1)
+        for i, chain in enumerate(chains_B)
+    }
+
+    # ------------------------------------------------------------------
+    # 6. Source IDs for provenance
     # ------------------------------------------------------------------
 
     source_A = os.path.basename(filepath_A)
     source_B = os.path.basename(filepath_B)
 
     # ------------------------------------------------------------------
-    # Create output DataContainer
+    # 7. Create output DataContainer and title
     # ------------------------------------------------------------------
 
     output_container = DataContainer("rdock_docked")
 
-    # ------------------------------------------------------------------
-    # Create _struct category
-    # ------------------------------------------------------------------
-
     struct = DataCategory(
         "struct",
-        [
-            "entry_id",
-            "title",
-        ],
+        ["entry_id", "title"],
     )
 
-    struct.append(
-        [
-            "rdock_docked",
-            (
-                "Protein-protein rigid-body docking model generated "
-                f"by RDock from {source_A} and {source_B}"
-            ),
-        ]
-    )
+    struct.append([
+        "rdock_docked",
+        (
+            "Protein-protein rigid-body docking model generated "
+            f"by RDock from {source_A} and {source_B}"
+        ),
+    ])
 
     output_container.append(struct)
 
     # ------------------------------------------------------------------
-    # Create _entity category
+    # 8. Create entity category
     # ------------------------------------------------------------------
 
     entity = DataCategory(
         "entity",
-        [
-            "id",
-            "type",
-            "pdbx_description",
-        ],
+        ["id", "type", "pdbx_description"],
     )
 
-    entity.append(
-        [
-            "1",
+    for chain in chains_A:
+        entity.append([
+            entity_map_A[chain],
             "polymer",
-            "Protein A",
-        ]
-    )
+            f"Protein A, source chain {chain}",
+        ])
 
-    entity.append(
-        [
-            "2",
+    for chain in chains_B:
+        entity.append([
+            entity_map_B[chain],
             "polymer",
-            "Protein B",
-        ]
-    )
+            f"Protein B, source chain {chain}",
+        ])
 
     output_container.append(entity)
 
     # ------------------------------------------------------------------
-    # Create _struct_asym category
+    # 9. Create struct_asym category
     # ------------------------------------------------------------------
 
     struct_asym = DataCategory(
         "struct_asym",
-        [
-            "id",
-            "entity_id",
-        ],
+        ["id", "entity_id"],
     )
 
-    struct_asym.append(
-        [
-            "A",
-            "1",
-        ]
-    )
+    for chain in chains_A:
+        struct_asym.append([
+            chain_map_A[chain],
+            entity_map_A[chain],
+        ])
 
-    struct_asym.append(
-        [
-            "B",
-            "2",
-        ]
-    )
+    for chain in chains_B:
+        struct_asym.append([
+            chain_map_B[chain],
+            entity_map_B[chain],
+        ])
 
     output_container.append(struct_asym)
 
     # ------------------------------------------------------------------
-    # Define a common, minimal _atom_site schema
+    # 10. Define a common _atom_site schema
     # ------------------------------------------------------------------
 
     atom_site_attributes = [
@@ -386,7 +475,7 @@ def write_docked_file(
     )
 
     # ------------------------------------------------------------------
-    # Helper for retrieving an attribute
+    # Helper to retrieve optional attributes
     #
     # Some mmCIF files may not contain every optional attribute.
     # Return "." when an attribute is absent.
@@ -399,12 +488,16 @@ def write_docked_file(
         return "."
 
     # ------------------------------------------------------------------
-    # Add Protein A
+    # 11. Add Protein A atoms
     # ------------------------------------------------------------------
 
     output_atom_id = 1
 
     for row in atom_site_A.data:
+
+        original_chain = get_value(
+            atom_site_A, row, "label_asym_id"
+        )
 
         output_row = [
             get_value(atom_site_A, row, "group_PDB"),
@@ -412,11 +505,11 @@ def write_docked_file(
             get_value(atom_site_A, row, "type_symbol"),
             get_value(atom_site_A, row, "label_atom_id"),
             get_value(atom_site_A, row, "label_comp_id"),
-            "A",
-            "1",
+            chain_map_A[original_chain],
+            entity_map_A[original_chain],
             get_value(atom_site_A, row, "label_seq_id"),
-            get_value(atom_site_A, row, "label_alt_id"),
             get_value(atom_site_A, row, "pdbx_PDB_ins_code"),
+            get_value(atom_site_A, row, "label_alt_id"),
             get_value(atom_site_A, row, "Cartn_x"),
             get_value(atom_site_A, row, "Cartn_y"),
             get_value(atom_site_A, row, "Cartn_z"),
@@ -425,11 +518,10 @@ def write_docked_file(
         ]
 
         output_atom_site.append(output_row)
-
         output_atom_id += 1
 
     # ------------------------------------------------------------------
-    # Add Protein B
+    # 12. Add Protein B atoms with transformed coordinates
     # ------------------------------------------------------------------
 
     for row, (x, y, z) in zip(
@@ -437,17 +529,21 @@ def write_docked_file(
         transformed_coordinates_B,
     ):
 
+        original_chain = get_value(
+            atom_site_B, row, "label_asym_id"
+        )
+
         output_row = [
             get_value(atom_site_B, row, "group_PDB"),
             str(output_atom_id),
             get_value(atom_site_B, row, "type_symbol"),
             get_value(atom_site_B, row, "label_atom_id"),
             get_value(atom_site_B, row, "label_comp_id"),
-            "B",
-            "2",
+            chain_map_B[original_chain],
+            entity_map_B[original_chain],
             get_value(atom_site_B, row, "label_seq_id"),
-            get_value(atom_site_B, row, "label_alt_id"),
             get_value(atom_site_B, row, "pdbx_PDB_ins_code"),
+            get_value(atom_site_B, row, "label_alt_id"),
             f"{x:.3f}",
             f"{y:.3f}",
             f"{z:.3f}",
@@ -456,20 +552,16 @@ def write_docked_file(
         ]
 
         output_atom_site.append(output_row)
-
         output_atom_id += 1
 
     # ------------------------------------------------------------------
-    # Add atom_site to output container
+    # 13. Add atom_site and write the output file
     # ------------------------------------------------------------------
 
     output_container.append(output_atom_site)
 
-    # ------------------------------------------------------------------
-    # Write output mmCIF
-    # ------------------------------------------------------------------
-
     io = IoAdapterCore()
+
     io.writeFile(
         output_file,
         [output_container],
